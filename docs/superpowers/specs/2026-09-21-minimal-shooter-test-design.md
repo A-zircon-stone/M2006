@@ -1,55 +1,55 @@
-# Minimal Shooter Test Unit Design
+# 最小发射测试单元设计
 
-Date: 2026-09-21
+日期：2026-09-21
 
-## Goal
+## 目标
 
-Extract the infantry gimbal's firing mechanism into a minimal test unit that runs on the existing STM32F407 control board. The unit controls only the two friction-wheel motors and the feeder motor while preserving the existing CAN motor stack.
+将步兵云台工程中的发射机构提取为一个最小测试单元，继续运行在现有 STM32F407 主控板上。该单元只控制两侧摩擦轮和拨弹轮，同时复用现有 CAN 电机控制链路。
 
-The first version is intended for safe, incremental bench testing. It does not include vision, referee-system heat control, UI, jam recovery, or gimbal/chassis control.
+第一版用于安全、分阶段的台架测试，不包含视觉、自瞄、裁判系统热量控制、UI、堵转恢复以及云台/底盘控制。
 
-## Scope
+## 范围
 
-### Included
+### 保留内容
 
-- Existing STM32F407 board and CubeMX peripheral configuration.
-- CAN1 motor feedback and current command transport.
-- Left friction wheel: M3508, feedback ID `0x201`.
-- Right friction wheel: M3508, feedback ID `0x202`.
-- Feeder: M2006 with 36:1 reduction, feedback ID `0x203`.
-- Existing `cMotor`, PID, sliding-mode controller, and CAN driver code where practical.
-- DT7/DR16 as one command source.
-- A command interface that can also be populated by a serial command source later.
-- Emergency stop and DT7 disconnect protection.
-- Friction-wheel spin-up, readiness detection, single shot, and continuous fire.
+- 现有 STM32F407 主控板和 CubeMX 外设配置。
+- CAN1 电机反馈与电流指令传输。
+- 左摩擦轮：M3508，反馈 ID 为 `0x201`。
+- 右摩擦轮：M3508，反馈 ID 为 `0x202`。
+- 拨弹轮：M2006，减速比 36:1，反馈 ID 为 `0x203`。
+- 尽可能复用现有的 `cMotor`、PID、滑模控制器和 CAN 驱动。
+- DT7/DR16 作为一个输入来源。
+- 预留可由串口命令填充的统一输入接口。
+- 急停和 DT7 断联保护。
+- 摩擦轮加速、到速判断、单发和连发。
 
-### Excluded
+### 暂不包含
 
-- Yaw and pitch control.
-- Chassis communication and follow control.
-- Vision aiming and `suggest_fire`.
-- Referee-system data and heat prediction.
-- UI and indicator behavior.
-- Jam detection and automatic feeder reversal.
-- Shot detection based on friction-wheel speed drop.
-- Serial receive/parser implementation.
+- Yaw、Pitch 云台控制。
+- 底盘通信和底盘随动。
+- 视觉瞄准和 `suggest_fire`。
+- 裁判系统数据和热量预测。
+- UI 和指示灯逻辑。
+- 堵转检测和拨弹轮自动反转。
+- 根据摩擦轮掉速判断是否成功发弹。
+- 串口接收和命令解析的具体实现。
 
-## Architecture
+## 系统架构
 
-The firing logic will be separated from its command sources and hardware transport:
+发射控制逻辑与命令来源、底层硬件传输分离：
 
 ```text
-DT7 adapter ---------+
-                     +--> ShooterCommand --> ShooterController --> motor targets/current buffers
-Serial adapter ------+                              |
-                                                    +--> ShooterStatus
+DT7 适配器 ---------+
+                    +--> ShooterCommand --> ShooterController --> 电机目标/电流缓冲区
+串口适配器 ---------+                              |
+                                                   +--> ShooterStatus
 ```
 
-`ShooterController` owns firing state and target generation. It does not parse DT7 packets or serial bytes. Command adapters translate their input into the same `ShooterCommand` structure.
+`ShooterController` 负责发射状态机和目标值生成，不解析 DT7 数据包，也不解析串口字节。不同输入适配器只负责把自己的输入转换成统一的 `ShooterCommand`。
 
-The existing CAN interrupt continues to update motor feedback. The shooter task calls the controller at a fixed 1 ms period, calculates controllers, writes the current values into the existing CAN buffer, and sends the enabled CAN frame.
+现有 CAN 接收中断继续更新电机反馈。发射任务以固定 1 ms 周期运行，完成状态更新、控制器计算、CAN 电流缓冲区写入和 CAN 发送。
 
-## Command Interface
+## 命令接口
 
 ```cpp
 struct ShooterCommand
@@ -62,79 +62,79 @@ struct ShooterCommand
 };
 ```
 
-- `armed`: permits operation. False always forces the safe state.
-- `friction_on`: requests friction-wheel spin-up.
-- `fire_once`: an edge-triggered request for one feeder step.
-- `fire_hold`: requests repeated feeder steps while held.
-- `emergency_stop`: immediately overrides every other command.
+- `armed`：允许发射系统工作。为 `false` 时必须进入安全状态。
+- `friction_on`：请求启动摩擦轮。
+- `fire_once`：单发请求，按上升沿触发一次。
+- `fire_hold`：持续发射请求，保持有效时允许连续发射。
+- `emergency_stop`：最高优先级，立即覆盖其他命令。
 
-The DT7 adapter is responsible for setting `armed` false when its online timeout expires. A future serial adapter can populate the same structure without changing the shooter controller.
+DT7 适配器负责在遥控器超时后将 `armed` 置为 `false`。将来的串口适配器可以填充同一个结构，不需要修改发射控制器。
 
-## State Machine
+## 状态机
 
 ```text
-SAFE --armed && friction_on--> SPINUP
-SPINUP --speed stable---------> READY
-READY --fire request----------> FIRING
-FIRING --feeder at target-----> COOLDOWN
-COOLDOWN --interval elapsed---> READY
+SAFE --解锁且请求摩擦轮--> SPINUP
+SPINUP --速度稳定----------> READY
+READY --收到发射请求-------> FIRING
+FIRING --拨弹轮到达目标----> COOLDOWN
+COOLDOWN --间隔结束--------> READY
 
-Any state --stop/disarm/disconnect--> SAFE
-SPINUP/READY --friction off---------> SAFE
+任意状态 --停止/撤销解锁/断联--> SAFE
+SPINUP/READY --关闭摩擦轮-------> SAFE
 ```
 
-### SAFE
+### SAFE：安全状态
 
-- Friction-wheel speed targets are zero.
-- Feeder output is zero.
-- Pending one-shot requests and timing counters are cleared.
-- On transition into `SAFE`, the feeder target is synchronized to its current measured position so that re-arming cannot resume an old movement.
+- 两个摩擦轮的目标速度为 0。
+- 拨弹轮输出电流为 0。
+- 清空未执行的单发请求和计时器。
+- 进入 `SAFE` 时，将拨弹目标同步到当前测量位置，避免重新解锁后继续执行旧目标。
 
-### SPINUP
+### SPINUP：摩擦轮加速状态
 
-- Left friction-wheel target: `-6200 rpm`.
-- Right friction-wheel target: `+6200 rpm`.
-- Both wheels must remain inside the configured ready band for 20 consecutive controller updates before entering `READY`.
-- Leaving the ready band resets the consecutive-ready counter.
+- 左摩擦轮目标速度：`-6200 rpm`。
+- 右摩擦轮目标速度：`+6200 rpm`。
+- 两个摩擦轮必须连续 20 个控制周期处于设定到速范围内，才进入 `READY`。
+- 任一摩擦轮离开到速范围，连续到速计数清零。
 
-### READY
+### READY：可发射状态
 
-- Friction wheels remain speed-controlled.
-- A rising `fire_once` request or active `fire_hold` request starts one feeder step.
-- The new feeder target is based on the previous commanded target, not an arbitrary repeatedly sampled current position.
+- 两个摩擦轮继续进行速度闭环控制。
+- `fire_once` 上升沿或有效的 `fire_hold` 会启动一次拨弹。
+- 新的拨弹目标基于上一次目标值递增，而不是每个周期都从当前测量角度重新计算。
 
-### FIRING
+### FIRING：拨弹执行状态
 
-- One shot advances the feeder target by 45 output-shaft degrees.
-- The feeder sliding-mode position controller tracks the target.
-- No new shot target can be created while the state is `FIRING`.
-- Arrival requires position error within a configured tolerance for consecutive updates, preventing noise from completing a shot early.
-- A timeout returns the controller to `SAFE`; automatic reverse recovery is deliberately excluded from version one.
+- 一发对应拨弹轮输出轴前进 45°。
+- 拨弹轮使用现有滑模位置控制器跟踪目标。
+- 处于 `FIRING` 时不能创建新的拨弹目标。
+- 只有位置误差连续多个周期小于允许范围，才认为拨弹到位，避免编码器噪声提前结束动作。
+- 如果超过动作超时，进入 `SAFE`；第一版不自动反转解卡。
 
-### COOLDOWN
+### COOLDOWN：发射间隔状态
 
-- The feeder holds its completed target.
-- After the configured inter-shot interval, the controller returns to `READY`.
-- If `fire_hold` remains active, the next update may start another shot.
-- A `fire_once` signal held high does not retrigger; it must fall and rise again.
+- 拨弹轮保持已经完成的目标角度。
+- 达到设定发射间隔后回到 `READY`。
+- 如果 `fire_hold` 仍然有效，下一次更新可以开始下一发。
+- `fire_once` 一直保持高电平不会重复触发，必须经历一次低电平后再次变高。
 
-## Motor Control
+## 电机控制
 
-The existing motor IDs and CAN1 `0x200` command frame remain unchanged:
+现有电机 ID 和 CAN1 的 `0x200` 控制帧保持不变：
 
-| Motor | Feedback ID | Command bytes |
+| 电机 | 反馈 ID | 控制帧字节 |
 |---|---:|---:|
-| Left friction wheel | `0x201` | 0-1 |
-| Right friction wheel | `0x202` | 2-3 |
-| Feeder | `0x203` | 4-5 |
+| 左摩擦轮 | `0x201` | 0~1 |
+| 右摩擦轮 | `0x202` | 2~3 |
+| 拨弹轮 | `0x203` | 4~5 |
 
-The friction wheels use their existing speed PID. The feeder uses its existing position sliding-mode controller and multi-turn encoder conversion.
+摩擦轮使用现有速度 PID。拨弹轮使用现有位置滑模控制器和多圈编码器角度换算。
 
-The controller separates target/state updates from CAN transmission. Only the task or CAN adapter writes and sends the final current frame.
+控制器负责计算目标和电流，CAN 适配层负责把最终电流写入发送缓冲区并发送，二者分开。
 
-## Source Layout
+## 文件组织
 
-New application files:
+新增应用文件：
 
 ```text
 User/Shooter/ShooterController.hpp
@@ -144,7 +144,7 @@ User/Tasks/ShooterTask/ShooterTask.hpp
 User/Tasks/ShooterTask/ShooterTask.cpp
 ```
 
-Existing reusable modules:
+复用的现有模块：
 
 ```text
 User/MotorC.*
@@ -155,47 +155,47 @@ User/Framework/RemoteC/RemoteC.*
 User/MCUDriver/REMOTEC/remoteio.*
 ```
 
-The original `Shootc` remains in the copied repository as reference during the first implementation, but it is not called by the minimal shooter task. Gimbal, INS, vision, and referee tasks will not be part of the active minimal runtime.
+复制工程中的原 `Shootc` 暂时保留作参考，但最小发射任务不调用它。Gimbal、INS、Vision 和 referee 任务不属于最小运行时。
 
-## Error Handling And Safety
+## 错误处理与安全规则
 
-- Startup state is always `SAFE`.
-- Emergency stop, disarm, and DT7 timeout have identical priority and behavior.
-- State transitions never depend on the fire input remaining active after a shot begins.
-- Friction readiness must be sustained, not observed for one sample.
-- A feeder movement timeout forces `SAFE` rather than starting another movement.
-- Motor current commands are explicitly written as zero in `SAFE`; stale CAN-buffer values are not trusted.
-- Bench testing starts without ammunition, with the mechanism restrained and friction wheels guarded.
+- 上电初始状态必须是 `SAFE`。
+- 急停、撤销解锁和 DT7 超时具有相同的最高优先级，并执行相同的安全动作。
+- 一旦一发动作开始，后续状态推进不能依赖开火按键是否仍然保持。
+- 摩擦轮必须连续到速，不能只凭单次采样判断就绪。
+- 拨弹动作超时后进入 `SAFE`，不能直接开始下一发。
+- `SAFE` 状态明确写入三个电机的零电流，不能依赖旧的 CAN 缓冲区内容。
+- 台架测试从无弹开始，机构固定，摩擦轮安装防护罩。
 
-## Verification
+## 验证方案
 
-### Host-side state tests
+### 主机侧状态机测试
 
-The state-transition core will be testable without STM32 peripherals. Tests cover:
+状态转换核心应能脱离 STM32 外设进行测试，至少覆盖：
 
-- Startup remains safe with zero targets.
-- Spin-up begins only when armed and friction is requested.
-- Readiness requires consecutive in-range samples.
-- A one-shot edge produces exactly one 45-degree target increment.
-- Holding `fire_once` does not retrigger.
-- Holding `fire_hold` retriggers only after firing and cooldown finish.
-- Releasing a short fire request does not prevent the active shot from completing.
-- Stop, disarm, and disconnect force safe outputs from every state.
-- Feeder timeout forces `SAFE`.
+- 初始状态为安全状态，目标电流为 0。
+- 只有解锁并请求摩擦轮时才进入加速状态。
+- 必须连续多个周期到速，不能单次到速就进入 `READY`。
+- 一次单发上升沿只产生一次 45°目标增量。
+- 持续保持 `fire_once` 不会重复触发。
+- `fire_hold` 只有在上一发完成并经过间隔后才会触发下一发。
+- 短暂开火请求释放后，正在执行的拨弹动作仍能完成。
+- 任意状态收到停止、撤销解锁或断联时，都进入安全状态。
+- 拨弹动作超时后进入安全状态。
 
-### Firmware verification
+### 固件验证
 
-- Configure and build the cross-compiled firmware from a clean build directory.
-- Confirm only the required FreeRTOS tasks are active.
-- Confirm CAN1 `0x200` buffer positions match IDs `0x201` through `0x203`.
-- With motor power disconnected, observe command transitions through debug output or CAN capture.
-- With no ammunition, verify friction direction/speed, one 45-degree feeder step, held-fire sequencing, and emergency stop.
+- 使用干净构建目录配置并编译 STM32F407 固件。
+- 确认运行时只启用最小发射所需任务。
+- 确认 CAN1 `0x200` 帧中 `0x201`、`0x202`、`0x203` 的字节位置正确。
+- 断开电机动力电源时，通过调试输出或 CAN 抓包观察状态和报文变化。
+- 无弹条件下验证摩擦轮方向/目标速度、一次 45°拨弹、连续发射和急停。
 
-## Acceptance Criteria
+## 验收标准
 
-- The project builds for STM32F407 from a clean configuration.
-- On startup or command loss, all three current commands are zero.
-- Both friction wheels reach their intended directions and target speeds before firing is enabled.
-- One one-shot edge creates one and only one 45-degree feeder movement.
-- Continuous fire produces sequential 45-degree movements separated by the configured interval.
-- The minimal runtime has no functional dependency on gimbal, chassis, vision, referee, UI, heat-control, or jam-recovery code.
+- 工程能从干净配置编译出 STM32F407 固件。
+- 上电或命令丢失时，三个电机的电流指令均为 0。
+- 两个摩擦轮达到目标方向和速度后，系统才允许拨弹。
+- 一次单发上升沿只产生一次 45°拨弹动作。
+- 连续发射按“45°动作完成—等待间隔—下一次 45°动作”的顺序执行。
+- 最小运行时不依赖云台、底盘、视觉、裁判系统、UI、热量控制或堵转恢复代码。
