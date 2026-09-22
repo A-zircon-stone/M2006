@@ -8,7 +8,8 @@
 namespace
 {
 constexpr std::size_t kLineCapacity = 32;
-constexpr uint32_t kCommandTimeoutMs = 500;
+// 手动串口测试需要留出输入下一条命令的时间，同时保留断联保护。
+constexpr uint32_t kCommandTimeoutMs = 5000;
 
 char line[kLineCapacity]{};
 std::size_t line_length = 0;
