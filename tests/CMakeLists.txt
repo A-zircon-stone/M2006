@@ -9,6 +9,15 @@ add_executable(shooter_controller_test
     ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter/ShooterController.cpp
 )
 
+add_executable(shooter_remote_test
+    ShooterRemoteTest.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter/ShooterRemote.cpp
+)
+
 target_include_directories(shooter_controller_test PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter
+)
+
+target_include_directories(shooter_remote_test PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter
 )

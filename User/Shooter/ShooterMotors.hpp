@@ -12,5 +12,6 @@ extern cMotor shooter_feeder;
 void ShooterMotors_Init();
 ShooterFeedback ShooterMotors_ReadFeedback();
 void ShooterMotors_Update(const ShooterOutput &output);
+void ShooterMotors_Send();
 
 #endif

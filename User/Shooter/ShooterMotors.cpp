@@ -77,3 +77,9 @@ void ShooterMotors_Update(const ShooterOutput &output)
     shooter_feeder.canSend(cMotor::eExternal,
                            static_cast<int16_t>(shooter_feeder.MotorCtrl.c_SMC.Out()));
 }
+
+void ShooterMotors_Send()
+{
+    // 三台发射电机对应同一个 DJI 0x200 电流控制帧。
+    CanReg[1].sendBuff();
+}
