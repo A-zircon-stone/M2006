@@ -59,10 +59,6 @@ include_directories(Core/Inc FATFS/Target FATFS/App USB_DEVICE/App USB_DEVICE/Ta
                                 )
 include_directories(User/Framework/IMU/algorithm User/Framework/IMU/bsp User/Framework/IMU/controller User/Framework/IMU/devices User/Framework/IMU/task)
 
-link_directories(${PROJECT_SOURCE_DIR}/Middlewares/ST/ARM/DSP/Lib)
-link_libraries("arm_cortexM4lf_math.a")
-link_directories(${PROJECT_SOURCE_DIR}/User/Framework/IMU/algorithm)
-
 add_definitions(
                 -DDEBUG
                 -DUSE_HAL_DRIVER
@@ -76,6 +72,16 @@ add_definitions(
 
 file(GLOB_RECURSE SOURCES "Core/*.*" "FATFS/*.*" "Middlewares/*.*" "USB_DEVICE/*.*" "Drivers/*.*" "Library/*.*" "User/*.*")
 
+# 最小发射运行时：保留 CAN、遥控器、PID/滑模和 Shooter；排除旧云台及其外围业务。
+list(FILTER SOURCES EXCLUDE REGEX "/User/Gimbal/")
+list(FILTER SOURCES EXCLUDE REGEX "/User/Tasks/")
+list(FILTER SOURCES EXCLUDE REGEX "/User/Framework/(IMU|Vision|ShootC|LED|RGB|MathTool|referee|image_referee|Filters)/")
+list(FILTER SOURCES EXCLUDE REGEX "/User/MCUDriver/(IMU|LED|DELAY|SPI)/")
+list(FILTER SOURCES EXCLUDE REGEX "/FATFS/")
+list(FILTER SOURCES EXCLUDE REGEX "/USB_DEVICE/")
+list(FILTER SOURCES EXCLUDE REGEX "/Middlewares/Third_Party/FatFs/")
+list(FILTER SOURCES EXCLUDE REGEX "/Middlewares/ST/STM32_USB_Device_Library/")
+
 set(LINKER_SCRIPT ${CMAKE_SOURCE_DIR}/STM32F407IGHX_FLASH.ld)
 
 add_link_options(-Wl,-gc-sections,--print-memory-usage,-Map=${PROJECT_BINARY_DIR}/${PROJECT_NAME}.map)
@@ -83,9 +89,6 @@ add_link_options(-mcpu=cortex-m4 -mthumb -mthumb-interwork)
 add_link_options(-T ${LINKER_SCRIPT})
 
 add_executable(${PROJECT_NAME}.elf ${SOURCES} ${LINKER_SCRIPT})
-
-# target link ahrs.lib
-target_link_libraries(${PROJECT_NAME}.elf ${PROJECT_SOURCE_DIR}/User/Framework/IMU/algorithm/AHRS.lib)
 
 set(HEX_FILE ${PROJECT_BINARY_DIR}/${PROJECT_NAME}.hex)
 set(BIN_FILE ${PROJECT_BINARY_DIR}/${PROJECT_NAME}.bin)

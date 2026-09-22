@@ -4,8 +4,6 @@
 
 #include "bsp_can.hpp"
 #include "main.h"
-#include "gimbalc.hpp"
-#include "MotorC.hpp"
 #include "ShooterMotors.hpp"
 
 
@@ -97,29 +95,11 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
     uint8_t rx_buffer[8];                                                                         //接收存放数据帧数据的数组
 
     HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &rx_header, rx_buffer);         //把can接收到的数据帧传入局部变量
-    uint8_t rx_data[8];
-    static int16_t vel_id[4] = {};
-    static uint8_t i = 0;
     if (hcan == &hcan1)
     {
-        pitch_R.canRead(rx_header.StdId, rx_buffer);
-        pitch_L.canRead(rx_header.StdId, rx_buffer);
-        fricL.canRead(rx_header.StdId, rx_buffer);
-        fricR.canRead(rx_header.StdId, rx_buffer);
-        rammc.canRead(rx_header.StdId, rx_buffer);
-        yaw_v2.canRead(rx_header.StdId,rx_buffer);
-
-        // 最小发射单元的三台电机也使用同一条 CAN1 反馈总线。
         shooter_fric_left.canRead(rx_header.StdId, rx_buffer);
         shooter_fric_right.canRead(rx_header.StdId, rx_buffer);
         shooter_feeder.canRead(rx_header.StdId, rx_buffer);
-    }
-    else if (hcan == &hcan2)
-    {                //can2
-        yaw.canRead(rx_header.StdId, rx_buffer);
-//        yaw_v2.canRead(rx_header.StdId,rx_buffer);
-        RefereeMsg(rx_header.StdId ,rx_buffer);
-
     }
 }
 

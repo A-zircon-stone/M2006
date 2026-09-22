@@ -1,0 +1,441 @@
+//
+// Created by Andrew on 2024/8/27.
+//
+
+#include "MotorC.hpp"
+
+cMotor::cMotor()
+{};///todo//待删
+
+cMotor::cMotor(uint32_t can_id_t, CAN_HandleTypeDef *hcan_t, int motor_type)
+{
+    _can_id = can_id_t;
+    _usehcan = hcan_t;
+    _motor_type = (eMotorType) motor_type;
+    ID = _can_id - 0x200;
+//    ID = (_can_id - 0x200 > 0) ? (_can_id - 0x200) : (_can_id - 0x140) ;
+    switch (_motor_type)
+    {
+        case GM_6020_volt:
+            if (_usehcan == &hcan1)
+            {
+                tx_channel = (ID <= 8) ? 0 : 2;
+            }
+            else if (_usehcan == &hcan2)
+            {
+                tx_channel = (ID <= 8) ? 3 : 5;
+            }
+            ID -= 4;
+            break;
+        case GM_6020_cur:
+            if (_usehcan == &hcan1)
+            {
+                tx_channel = (ID <= 8) ? 9 : 10;
+            }
+            else if (_usehcan == &hcan2)
+            {
+                tx_channel = (ID <= 8) ? 11 : 12;
+            }
+            ID -= 4;
+            break;
+        case M_3508:
+            if (_usehcan == &hcan1)
+            {
+                tx_channel = (ID <= 4) ? 1 : 0;
+            }
+            else if (_usehcan == &hcan2)
+            {
+                tx_channel = (ID <= 4) ? 4 : 3;
+            }
+            break;
+        case M_2006:
+            if (_usehcan == &hcan1)
+            {
+                tx_channel = (ID <= 4) ? 1 : 0;
+            }
+            else if (_usehcan == &hcan2)
+            {
+                tx_channel = (ID <= 4) ? 4 : 3;
+            }
+            break;
+        case M_3508_p19:
+            if (_usehcan == &hcan1)
+            {
+                tx_channel = (ID <= 4) ? 1 : 0;
+            }
+            else if (_usehcan == &hcan2)
+            {
+                tx_channel = (ID <= 4) ? 4 : 3;
+            }
+            break;
+        case M_2006_p36:
+            if (_usehcan == &hcan1)
+            {
+                tx_channel = (ID <= 4) ? 1 : 0;
+            }
+            else if (_usehcan == &hcan2)
+            {
+                tx_channel = (ID <= 4) ? 4 : 3;
+            }
+            break;
+        case MF_9025:
+            if(_usehcan == &hcan1)
+            {
+                tx_channel = 13;
+            }
+            break;
+        default:
+            errorHandle(ERROR_MOTOR);
+            break;
+    }
+    if (ID >= 5) ID -= 4;
+
+    switch (_motor_type)
+    {
+
+        case GM_6020_volt:
+            _ratio = 1;
+            break;
+        case GM_6020_cur:
+            _ratio = 1;
+            break;
+        case M_3508:
+            _ratio = 1;
+            break;
+        case M_2006:
+            _ratio = 1;
+            break;
+        case M_3508_p19:
+            _ratio = 19;
+            break;
+        case M_2006_p36:
+            _ratio = 36;
+            break;
+        case MF_9025:
+            _ratio = 1;
+            break;
+        default:
+            errorHandle(ERROR_MOTOR);
+            break;
+    }
+    CanReg[tx_channel].send_flag = 1;
+}
+
+
+void cMotor::errorHandle(eErrorType error_type)
+{
+    while (1)
+    {
+        switch (error_type)
+        {
+            case ERROR_MOTOR:
+                usart_printf("motor setting error\r\n");
+                break;
+            case eCanSend_Error:
+                usart_printf("can send error\r\n");
+                break;
+        }
+    }
+}
+
+/**
+ * 电机控制函数 给相应的数据位输入值
+ * @param controller_type 选择算法  eExternal说明输出的数据不是motor类里的算法 可用于不同信号的输入
+ * @param current 如果选择eExternal模式需要将电流值输入至此
+ */
+void cMotor::canSend(eController controller_type, int16_t current)
+{
+    _controller_type = (eController) controller_type;
+    if (_controller_type != eExternal)
+    {
+        errorHandle(eCanSend_Error);
+    }
+    else
+    {
+        switch (_motor_type)
+        {
+            case MF_9025:
+                CanReg[13].CANx_send_data[0] = 0xA1;
+                CanReg[13].CANx_send_data[5] = current >> 8;
+                CanReg[13].CANx_send_data[4] = current;
+                break;
+            default:
+                CanReg[tx_channel].CANx_send_data[(ID - 1) * 2] = current >> 8;
+                CanReg[tx_channel].CANx_send_data[(ID - 1) * 2 + 1] = current;
+                break;
+        }
+    }
+}
+
+/**
+ * 发送motor类内的算法输出
+ * @param controller_type   算法类型
+ */
+ void cMotor::canSend(eController controller_type)
+{
+     int16_t current = 0;
+     _controller_type = (eController) controller_type;
+     switch (_controller_type)
+     {
+         case eExternal:
+             errorHandle(eCanSend_Error);
+             break;
+         case ePid:
+             current = (int16_t) MotorCtrl.c_PID.pidOut();
+             break;
+//        case eAdrc:
+//            current = (int16_t) MotorCtrl.c_ADRC.ADRCout();
+//            break;
+     }
+    switch (_motor_type)
+    {
+        case MF_9025:
+            CanReg[13].CANx_send_data[0] = 0xA1;
+            CanReg[13].CANx_send_data[5] = current >> 8;
+            CanReg[13].CANx_send_data[4] = current;
+            break;
+        default:
+            CanReg[tx_channel].CANx_send_data[(ID - 1) * 2] = current >> 8;
+            CanReg[tx_channel].CANx_send_data[(ID - 1) * 2 + 1] = current;
+            break;
+    }
+}
+//todo:can初始化通过选择电机can口自动分配发送数据的通道（带电机手册讲解）
+void cMotor::canInit(uint32_t can_id_t, CAN_HandleTypeDef *hcan_t, int motor_type)
+{
+    _can_id = can_id_t;
+    _usehcan = hcan_t;
+    _motor_type = (eMotorType) motor_type;
+    ID = _can_id - 0x200 ;
+//    ID = (_can_id - 0x200 > 0) ? (_can_id - 0x200) : (_can_id - 0x140) ;
+    switch (_motor_type)
+    {
+        case GM_6020_volt:
+            if (_usehcan == &hcan1)
+            {
+                tx_channel = (ID <= 8) ? 0 : 2;
+            }
+            else if (_usehcan == &hcan2)
+            {
+                tx_channel = (ID <= 8) ? 3 : 5;
+            }
+            ID -= 4;
+            break;
+        case GM_6020_cur:
+            if (_usehcan == &hcan1)
+            {
+                tx_channel = (ID <= 8) ? 9 : 10;
+            }
+            else if (_usehcan == &hcan2)
+            {
+                tx_channel = (ID <= 8) ? 11 : 12;
+            }
+            ID -= 4;
+            break;
+        case M_3508:
+            if (_usehcan == &hcan1)
+            {
+                tx_channel = (ID <= 4) ? 1 : 0;
+            }
+            else if (_usehcan == &hcan2)
+            {
+                tx_channel = (ID <= 4) ? 4 : 3;
+            }
+            break;
+        case M_2006:
+            if (_usehcan == &hcan1)
+            {
+                tx_channel = (ID <= 4) ? 1 : 0;
+            }
+            else if (_usehcan == &hcan2)
+            {
+                tx_channel = (ID <= 4) ? 4 : 3;
+            }
+            break;
+        case M_3508_p19:
+            if (_usehcan == &hcan1)
+            {
+                tx_channel = (ID <= 4) ? 1 : 0;
+            }
+            else if (_usehcan == &hcan2)
+            {
+                tx_channel = (ID <= 4) ? 4 : 3;
+            }
+            break;
+        case M_2006_p36:
+            if (_usehcan == &hcan1)
+            {
+                tx_channel = (ID <= 4) ? 1 : 0;
+            }
+            else if (_usehcan == &hcan2)
+            {
+                tx_channel = (ID <= 4) ? 4 : 3;
+            }
+            break;
+        case MF_9025:
+            if(_usehcan == &hcan1)
+            {
+                tx_channel = 13;
+            }
+            break;
+        default:
+            errorHandle(ERROR_MOTOR);
+            break;
+    }
+    if (ID >= 5) ID -= 4;
+
+    switch (_motor_type)
+    {
+
+        case GM_6020_volt:
+            _ratio = 1;
+            break;
+        case GM_6020_cur:
+            _ratio = 1;
+            break;
+        case M_3508:
+            _ratio = 1;
+            break;
+        case M_2006:
+            _ratio = 1;
+            break;
+        case M_3508_p19:
+            _ratio = 19;
+            break;
+        case M_2006_p36:
+            _ratio = 36;
+            break;
+        case MF_9025:
+            _ratio = 1;
+            break;
+        default:
+            errorHandle(ERROR_MOTOR);
+            break;
+    }
+    CanReg[tx_channel].send_flag = 1;
+}
+
+/**
+ * 读取can数据
+ * @param rx_std_id
+ * @param rx_buffer
+ */
+void cMotor:: canRead(uint32_t rx_std_id, uint8_t rx_buffer[8])
+{
+    if (_motor_type == cMotor::MF_9025)
+    {
+        if (_can_id == rx_std_id) MotorMeasureFun_lk(&_can_read, rx_buffer);
+
+    }
+    else
+    {
+        if (_can_id == rx_std_id) MotorMeasureFun(&_can_read, rx_buffer);
+    }
+}
+
+void cMotor::protect()
+{
+    canSend(eExternal, 0);
+
+}
+
+Motor_measure_f &cMotor::getEcd()
+{
+        if (_motor_type == MF_9025)
+        {
+            _ecd.total_angle = (float) _can_read.total_angle * 360 / (65535 * _ratio);
+            _ecd.angle = (float) _can_read.angle * 360 / 65535;
+        } else
+        {
+            _ecd.total_angle = (float) _can_read.total_angle * 360 / (8191 * _ratio);
+            _ecd.angle = (float) _can_read.angle * 360 / 8191;
+        }
+            _ecd.speed = (float) _can_read.speed / _ratio;
+            _ecd.torque_current = (float) _can_read.torque_current;
+            _ecd.temp = (float) _can_read.temp;
+            _ecd.Output = (float) _can_read.Output;
+            return _ecd;
+}
+
+void cMotor::clearEcdRcnt()
+{
+    _can_read.round_cnt = 0;
+
+}
+
+float cCar::getPCarInEcd() const
+{
+    return _pCarInEcd;
+}
+
+float cCar::getPCarPitchCentre()
+{
+    return _pCarPitchCentre;
+}
+
+
+/**
+ * 选择车 不同车的正前方不一样
+ * @param car_type
+ */
+cCar::cCar(cCar::eCarType car_type) : CarType(car_type)
+{
+    switch (CarType)
+    {
+
+        case ONMI:
+            _pCarInEcd = 252.364;//全向轮步兵
+//            _pCarInEcd = 345.0567;//全向轮步兵
+
+            _pCarPitchCentre = 83;
+//            _pCarPitchCentre = 38.15;
+
+//            _pCarInEcd = 358;//麦轮步兵
+//            _pCarPitchCentre = 155.9;
+            break;
+        case MECANUM:
+            _pCarInEcd = 283.04;
+            break;
+        case UAV:
+            _p_UAVInEcd_yaw = 328.75;
+            _p_UAVInEcd_pitch = 125;
+            break;
+    }
+
+    CtrlMode = eRC;
+    ShootMode = eNormal;
+    RammcMode = eRammcNormal;
+    FricCtrlMode = eFric_SHUT;
+    ChassisMode = eFollow;
+    SpinMode = eUniform;
+    AmmoMode = eContinuousAmmo;
+    ChassisAngle = eZero;
+}
+
+void cCar::setPCarEcdOffset(float p_car_in_ecd)
+{
+    _pCar_Ecd_Offset += p_car_in_ecd;
+}
+
+void cCar::setPCarAngleOffset(float p_car_angle_offset)
+{
+    _pCar_Angle_offset = p_car_angle_offset;
+}
+
+float cCar::getPCarAngleOffset()
+{
+    return _pCar_Angle_offset;
+}
+
+float cCar::getPCarEcdOffset()  {
+    return _pCar_Ecd_Offset;
+}
+
+void cCar::setPturnCarAngleOffset(float p_car_angle_offset)
+{
+    _pCar_turnAngle_offset = p_car_angle_offset;
+}
+
+float cCar::getPCarAngleOffsetturn() {
+    return _pCar_turnAngle_offset;
+}
