@@ -1,7 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"E:/STM32Projects/Shoot/tests/build/cmake_install.cmake"
-	],
-	"Parallel" : false
-}

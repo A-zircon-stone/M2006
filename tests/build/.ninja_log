@@ -1,7 +1,0 @@
-# ninja log v7
-33	440	8117563236053735	CMakeFiles/shooter_controller_test.dir/ShooterControllerTest.cpp.obj	c221adf261e871ac
-2	333	8117564835319751	build.ninja	5923f959930a5d9e
-2	333	8117564835319751	E:/STM32Projects/Shoot/tests/build/cmake_install.cmake	5923f959930a5d9e
-22	283	8117564836125080	CMakeFiles/shooter_controller_test.dir/ShooterControllerTest.cpp.obj	c221adf261e871ac
-38	837	8117564836287018	CMakeFiles/shooter_controller_test.dir/E_/STM32Projects/Shoot/User/Shooter/ShooterController.cpp.obj	cb891ea304f57dee
-837	1188	8117564844278340	shooter_controller_test.exe	40d43b9c0baf7354

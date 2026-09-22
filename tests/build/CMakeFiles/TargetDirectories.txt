@@ -1,3 +1,0 @@
-E:/STM32Projects/Shoot/tests/build/CMakeFiles/shooter_controller_test.dir
-E:/STM32Projects/Shoot/tests/build/CMakeFiles/edit_cache.dir
-E:/STM32Projects/Shoot/tests/build/CMakeFiles/rebuild_cache.dir
