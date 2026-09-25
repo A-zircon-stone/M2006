@@ -45,7 +45,8 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Variables */
-
+osThreadId RCPrintTest_TaskHandle;
+osThreadId FeederPidTest_TaskHandle;
 /* USER CODE END Variables */
 osThreadId defaultTaskHandle;
 osThreadId Shooter_TaskHandle;
@@ -108,11 +109,17 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE END RTOS_SEMAPHORES */
 
   /* Create the thread(s) */
-  osThreadDef(Shooter_Task, ShooterTask, osPriorityNormal, 0, 1024);
-  Shooter_TaskHandle = osThreadCreate(osThread(Shooter_Task), NULL);
+  /* M2006 调试期间暂停创建正式发射任务，避免滑模控制与测试任务同时写入 0x204。 */
+  /* osThreadDef(Shooter_Task, ShooterTask, osPriorityNormal, 0, 1024); */
+  /* Shooter_TaskHandle = osThreadCreate(osThread(Shooter_Task), NULL); */
 
   /* USER CODE BEGIN RTOS_THREADS */
-  /* add threads, ... */
+  /* 暂停遥控打印，避免它和调试任务同时使用 USART1 TX DMA。 */
+  /* osThreadDef(RCPrintTest_Task, RCPrintTestTask, osPriorityLow, 0, 1024); */
+  /* RCPrintTest_TaskHandle = osThreadCreate(osThread(RCPrintTest_Task), NULL); */
+
+  osThreadDef(FeederPidTest_Task, FeederPidTestTask, osPriorityNormal, 0, 1024);
+  FeederPidTest_TaskHandle = osThreadCreate(osThread(FeederPidTest_Task), NULL);
   /* USER CODE END RTOS_THREADS */
 
 }

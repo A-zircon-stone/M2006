@@ -50,6 +50,8 @@ void OS_Init(void);
 /* USER CODE BEGIN EM */
 void GimbalTask(void const * argument);
 void ShooterTask(void const * argument);
+void RCPrintTestTask(void const * argument);
+void FeederPidTestTask(void const * argument);
 void VisionTask(void const *argument);
 void INSTask(void const * argument);
 /* USER CODE END EM */

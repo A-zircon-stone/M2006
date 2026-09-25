@@ -36,23 +36,25 @@ void ShooterMotors_Init()
 {
     shooter_fric_left.canInit(0x201, &hcan1, cMotor::M_3508);
     shooter_fric_right.canInit(0x202, &hcan1, cMotor::M_3508);
-    shooter_feeder.canInit(0x203, &hcan1, cMotor::M_2006_p36);
+    shooter_feeder.canInit(0x204, &hcan1, cMotor::M_2006_p36);
 
     initFrictionMotor(shooter_fric_left);
     initFrictionMotor(shooter_fric_right);
     initFeederMotor(shooter_feeder);
 }
 
-ShooterFeedback ShooterMotors_ReadFeedback()
+ShooterFeedback ShooterMotors_ReadFeedback()//返回值为结构体的函数
 {
     ShooterFeedback feedback;
     feedback.left_speed = shooter_fric_left.getEcd().speed;
     feedback.right_speed = shooter_fric_right.getEcd().speed;
     feedback.feeder_position = shooter_feeder.getEcd().total_angle;
-    return feedback;
+    return feedback;//我去还能这样，创建一个结构体变量，然后储存需要的值
 }
 
-void ShooterMotors_Update(const ShooterOutput &output)
+void ShooterMotors_Update(const ShooterOutput &output)//const ShooterOutput &output
+
+//意思是：output是别名，是调用处的实参的别名，const意思是不允许通过别名修改原变量的值，&是指引用声明。
 {
     if (output.safe_output)
     {

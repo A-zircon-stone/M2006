@@ -14,10 +14,46 @@ add_executable(shooter_remote_test
     ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter/ShooterRemote.cpp
 )
 
+add_executable(rc_print_formatter_test
+    RCPrintFormatterTest.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter/RCPrintFormatter.cpp
+)
+
+add_executable(feeder_telemetry_formatter_test
+    FeederTelemetryFormatterTest.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter/FeederTelemetryFormatter.cpp
+)
+
+add_executable(feeder_pid_safety_test
+    FeederPidSafetyTest.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter/FeederPidSafety.cpp
+)
+
+add_executable(feeder_fire_controller_test
+    FeederFireControllerTest.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter/FeederFireController.cpp
+)
+
 target_include_directories(shooter_controller_test PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter
 )
 
 target_include_directories(shooter_remote_test PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter
+)
+
+target_include_directories(rc_print_formatter_test PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter
+)
+
+target_include_directories(feeder_telemetry_formatter_test PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter
+)
+
+target_include_directories(feeder_pid_safety_test PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter
+)
+
+target_include_directories(feeder_fire_controller_test PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter
 )
