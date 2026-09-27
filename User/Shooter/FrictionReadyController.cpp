@@ -14,12 +14,20 @@ FrictionReadyController::FrictionReadyController(
 
 bool FrictionReadyController::update(const bool friction_enabled,
                                      const float left_speed,
-                                     const float right_speed)
+                                     const float right_speed,
+                                     const bool speed_check_enabled)
 {
     if (!friction_enabled)
     {
         reset();
         return false;
+    }
+
+    if (!speed_check_enabled)
+    {
+        ready_cycles_ = required_cycles_;
+        ready_ = true;
+        return true;
     }
 
     const bool left_in_range =

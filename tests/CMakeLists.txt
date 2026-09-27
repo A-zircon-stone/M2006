@@ -39,6 +39,11 @@ add_executable(sliding_integral_limit_test
     ${CMAKE_CURRENT_LIST_DIR}/../User/Framework/Sliding/Sliding.cpp
 )
 
+add_executable(feeder_smc_controller_test
+    FeederSmcControllerTest.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter/FeederSmcController.cpp
+)
+
 add_executable(feeder_stall_recovery_controller_test
     FeederStallRecoveryControllerTest.cpp
     ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter/FeederStallRecoveryController.cpp
@@ -82,6 +87,10 @@ target_include_directories(sliding_integral_limit_test PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/stubs
     ${CMAKE_CURRENT_LIST_DIR}/../User/Framework/Sliding
     ${CMAKE_CURRENT_LIST_DIR}/../User/Framework/Debug
+)
+
+target_include_directories(feeder_smc_controller_test PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter
 )
 
 target_include_directories(feeder_stall_recovery_controller_test PRIVATE

@@ -1,5 +1,6 @@
 #include "FeederFireController.hpp"
 #include "FeederPidSafety.hpp"
+#include "FeederSmcController.hpp"
 #include "FeederStallRecoveryController.hpp"
 #include "FrictionReadyController.hpp"
 #include "ShooterMotors.hpp"
@@ -12,26 +13,28 @@
 
 namespace
 {
-constexpr TickType_t kControlPeriod = 1 / portTICK_RATE_MS;
+constexpr TickType_t kControlPeriod = 2 / portTICK_RATE_MS;
+constexpr float kControlPeriodSeconds = 0.002f;
 constexpr TickType_t kFeedbackSettleTime = 200 / portTICK_RATE_MS;
-constexpr uint32_t kPrintDivider = 20;
+constexpr uint32_t kPrintDivider = 10;
 constexpr std::size_t kPrintBufferSize = 200;
 
 constexpr float kFrictionTargetSpeed = 6200.0f;
 constexpr float kFrictionReadyMinimum = 5900.0f;
 constexpr float kFrictionReadyMaximum = 6300.0f;
 constexpr uint32_t kFrictionReadyCycles = 20;
+constexpr bool kUseFrictionReadyCheck = true;
 
-// 保留当前已经调过的拨弹参数。
-constexpr float kFeederSmcMaxCurrent = 5000.0f;
-constexpr float kPositionStep = 40.0f;
-constexpr float kPositionTolerance = 1.0f;
-constexpr uint32_t kShotIntervalCycles = 30;
+constexpr float kFeederSmcMaxCurrent = 9600.0f;
+constexpr float kFeederSmcIntegralLimit = 2000.0f;
+constexpr float kPositionStep = 45.0f;
+constexpr float kPositionTolerance = 0.5f;
+constexpr uint32_t kMinimumMotionCycles = 70;
+constexpr uint32_t kPauseCycles = 10;
 
-constexpr int16_t kStallCurrentThreshold = 1400;
-constexpr float kStallSpeedThreshold = 5.0f;
+constexpr float kStallCurrentThreshold = 7500.0f;
 constexpr uint32_t kStallDetectCycles = 100;
-constexpr float kRecoveryStep = -36.0f;
+constexpr float kRecoveryStep = -45.0f;
 constexpr uint32_t kRecoveryTimeoutCycles = 400;
 
 char print_buffer[kPrintBufferSize]{};
@@ -80,24 +83,25 @@ extern "C" void ShooterTask(void const *argument)
     Motor_measure_f feeder_feedback = shooter_feeder.getEcd();
     float target_position = feeder_feedback.total_angle;
 
-    // 预装当前目标，避免第一次计算产生“0到累计角度”的虚假目标突变。
-    shooter_feeder.MotorCtrl.c_SMC.ErrorUpdate(target_position,
-                                               feeder_feedback.total_angle,
-                                               feeder_feedback.speed);
-    shooter_feeder.MotorCtrl.c_SMC.ErrorUpdate(target_position,
-                                               feeder_feedback.total_angle,
-                                               feeder_feedback.speed);
-    shooter_feeder.MotorCtrl.c_SMC.Integval_Clear();
+    FeederSmcController feeder_smc(0.3f,
+                                   2000.0f,
+                                   2.0f,
+                                   10.0f,
+                                   1.1f,
+                                   0.5f,
+                                   kFeederSmcMaxCurrent,
+                                   kFeederSmcIntegralLimit);
+    feeder_smc.reset(target_position);
 
     FrictionReadyController friction_ready(kFrictionReadyMinimum,
                                            kFrictionReadyMaximum,
                                            kFrictionReadyCycles);
     FeederFireController fire_controller(kPositionStep,
                                          kPositionTolerance,
-                                         kShotIntervalCycles);
+                                         kMinimumMotionCycles,
+                                         kPauseCycles);
     FeederStallRecoveryController stall_recovery(
             kStallCurrentThreshold,
-            kStallSpeedThreshold,
             kStallDetectCycles,
             kRecoveryStep,
             kRecoveryTimeoutCycles);
@@ -106,7 +110,6 @@ extern "C" void ShooterTask(void const *argument)
     fire_controller.reset(target_position,
                           initial_remote.rc.ch[3] > 600);
 
-    int16_t previous_feeder_current = 0;
     uint32_t print_count = 0;
     TickType_t current = xTaskGetTickCount();
 
@@ -124,10 +127,12 @@ extern "C" void ShooterTask(void const *argument)
         const bool fire_permitted = friction_ready.update(
                 friction_enabled,
                 shooter_fric_left.getEcd().speed,
-                shooter_fric_right.getEcd().speed);
+                shooter_fric_right.getEcd().speed,
+                kUseFrictionReadyCheck);
 
         bool force_zero_current = false;
         bool clear_integral = false;
+        bool reset_smc = false;
         bool stall_active = false;
 
         if (stop_requested)
@@ -138,15 +143,33 @@ extern "C" void ShooterTask(void const *argument)
             target_position = feeder_feedback.total_angle;
             fire_controller.reset(target_position,
                                   remote.rc.ch[3] > 600);
-            clear_integral = true;
+            reset_smc = true;
+            force_zero_current = true;
+        }
+        else if (!fire_permitted)
+        {
+            // 与重构版一致：摩擦轮未稳定时不保持未完成的拨弹目标。
+            stall_recovery.reset();
+            target_position = feeder_feedback.total_angle;
+            fire_controller.reset(target_position,
+                                  remote.rc.ch[3] > 600);
+            reset_smc = true;
             force_zero_current = true;
         }
         else
         {
-            const FeederStallRecoveryOutput recovery_output =
-                    stall_recovery.update(previous_feeder_current,
-                                          feeder_feedback.speed,
-                                          feeder_feedback.total_angle);
+            FeederStallRecoveryOutput recovery_output{};
+            if (fire_controller.stepInProgress())
+            {
+                recovery_output = stall_recovery.update(
+                        feeder_feedback.torque_current,
+                        feeder_feedback.total_angle);
+            }
+            else
+            {
+                // 与同学版本一致：只在正常拨弹前进阶段累计堵转周期。
+                stall_recovery.reset();
+            }
 
             if (recovery_output.stalled)
             {
@@ -157,12 +180,11 @@ extern "C" void ShooterTask(void const *argument)
             }
             else if (recovery_output.recovery_completed)
             {
-                // 解卡结束先同步实际位置，本周期输出0；下周期再接受发射命令。
+                // 解卡结束同步实际位置并重置SMC；下周期再接受发射命令。
                 target_position = feeder_feedback.total_angle;
                 fire_controller.reset(target_position,
-                                      remote.rc.ch[3] > 600);
-                clear_integral = recovery_output.clear_integral;
-                force_zero_current = true;
+                                       remote.rc.ch[3] > 600);
+                reset_smc = recovery_output.clear_integral;
             }
             else
             {
@@ -173,27 +195,30 @@ extern "C" void ShooterTask(void const *argument)
                         feeder_feedback.total_angle,
                         fire_permitted);
                 target_position = fire_output.target_position;
+                clear_integral = fire_output.shot_completed;
             }
         }
 
-        if (clear_integral)
+        if (reset_smc)
         {
-            shooter_feeder.MotorCtrl.c_SMC.Integval_Clear();
+            feeder_smc.reset(target_position);
+        }
+        else if (clear_integral)
+        {
+            feeder_smc.clearIntegral();
         }
 
-        shooter_feeder.MotorCtrl.c_SMC.ErrorUpdate(
+        const float smc_output = feeder_smc.update(
                 target_position,
                 feeder_feedback.total_angle,
-                feeder_feedback.speed);
-        const float smc_output =
-                shooter_feeder.MotorCtrl.c_SMC.SmcCalculate();
+                feeder_feedback.speed,
+                kControlPeriodSeconds);
         const int16_t feeder_current = force_zero_current
                 ? 0
                 : FeederSmc_LimitBidirectionalCurrent(
                         smc_output,
                         kFeederSmcMaxCurrent);
 
-        previous_feeder_current = feeder_current;
         shooter_feeder.canSend(cMotor::eExternal, feeder_current);
 
         // 0x201、0x202、0x204同属CAN1的0x200控制帧，每周期只发送一次。

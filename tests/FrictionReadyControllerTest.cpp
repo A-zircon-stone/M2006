@@ -35,5 +35,13 @@ int main()
     assert(!controller.update(false, -6200.0f, 6200.0f));
     assert(!controller.ready());
 
+    // 关闭速度到位检查后，只要摩擦轮已启用，即使转速未达标也允许发射。
+    assert(controller.update(true, 0.0f, 0.0f, false));
+    assert(controller.ready());
+
+    // 关闭的只是速度检查；摩擦轮本身未启用时仍必须禁止发射。
+    assert(!controller.update(false, -6200.0f, 6200.0f, false));
+    assert(!controller.ready());
+
     return 0;
 }

@@ -4,7 +4,7 @@
 
 int main()
 {
-    FeederFireController controller(-36.0f, 1.0f, 30);
+    FeederFireController controller(45.0f, 0.5f, 70, 10);
     controller.reset(100.0f, false);
 
     // S1=1 的 Stop 状态把目标同步到当前位置，但不得进入发射步骤。
@@ -13,52 +13,47 @@ int main()
     assert(output.target_changed);
     assert(!output.step_in_progress);
     assert(output.target_position == 100.0f);
+    assert(!output.shot_completed);
 
-    // 单发模式只响应一次上升沿；摇杆持续保持不能创建第二发。
+    // 单发模式只响应一次上升沿，目标必须从实际位置增加45°。
     controller.update(3, 1, 0, 100.0f, true);
     output = controller.update(3, 1, 660, 100.0f, true);
     assert(!output.stop);
     assert(output.target_changed);
     assert(output.step_in_progress);
-    assert(output.target_position == 64.0f);
+    assert(output.target_position == 145.0f);
 
-    output = controller.update(3, 1, 660, 64.0f, true);
-    assert(!output.target_changed);
-    for (int i = 0; i < 31; ++i)
+    // 即使提前到位，也必须至少维持70个控制周期。
+    for (int i = 0; i < 69; ++i)
     {
-        output = controller.update(3, 1, 660, 64.0f, true);
+        output = controller.update(3, 1, 660, 145.0f, true);
         assert(!output.target_changed);
+        assert(output.step_in_progress);
+        assert(!output.shot_completed);
     }
 
-    // 松开后重新推到触发区，才允许第二次单发。
-    controller.update(3, 1, 0, 64.0f, true);
-    output = controller.update(3, 1, 660, 64.0f, true);
-    assert(output.target_changed);
-    assert(output.target_position == 28.0f);
-
-    // 连发模式保持触发时，必须等上一发到位并完成30周期间隔。
-    controller.reset(100.0f, false);
-    output = controller.update(3, 2, 660, 100.0f, true);
-    assert(output.target_changed);
-    assert(output.target_position == 64.0f);
-
-    output = controller.update(3, 2, 660, 80.0f, true);
-    assert(!output.target_changed);
+    // 第70周期开始到位暂停，但还要继续保持目标10个周期。
+    output = controller.update(3, 1, 660, 145.0f, true);
     assert(output.step_in_progress);
+    assert(!output.shot_completed);
 
-    // 实际位置可能越过理论目标；原版下一发以实际位置为基准。
-    output = controller.update(3, 2, 660, 59.0f, true);
-    assert(!output.target_changed);
-    assert(!output.step_in_progress);
-
-    for (int i = 0; i < 29; ++i)
+    for (int i = 0; i < 8; ++i)
     {
-        output = controller.update(3, 2, 660, 59.0f, true);
-        assert(!output.target_changed);
+        output = controller.update(3, 1, 660, 145.0f, true);
+        assert(output.step_in_progress);
+        assert(!output.shot_completed);
     }
-    output = controller.update(3, 2, 660, 59.0f, true);
+
+    // 第10个暂停周期才结束本发，同步实际位置并通知任务清积分。
+    output = controller.update(3, 1, 660, 146.0f, true);
     assert(output.target_changed);
-    assert(output.target_position == 23.0f);
+    assert(!output.step_in_progress);
+    assert(output.shot_completed);
+    assert(output.target_position == 146.0f);
+
+    // 单发摇杆一直保持时不得创建第二发。
+    output = controller.update(3, 1, 660, 146.0f, true);
+    assert(!output.target_changed);
 
     // 摩擦轮未达标时不允许创建新目标。单发触发不会排队，必须松开后重触发。
     controller.reset(100.0f, false);
@@ -77,19 +72,6 @@ int main()
     assert(!output.target_changed);
     output = controller.update(3, 2, 660, 100.0f, true);
     assert(output.target_changed);
-
-    // 新拨弹盘反向安装：正步长时应向角度增大的方向运动，并按正向到位。
-    FeederFireController reversed_controller(40.0f, 1.0f, 30);
-    reversed_controller.reset(100.0f, false);
-    output = reversed_controller.update(3, 2, 660, 100.0f, true);
-    assert(output.target_changed);
-    assert(output.target_position == 140.0f);
-
-    output = reversed_controller.update(3, 2, 660, 120.0f, true);
-    assert(output.step_in_progress);
-
-    output = reversed_controller.update(3, 2, 660, 140.0f, true);
-    assert(!output.step_in_progress);
 
     return 0;
 }

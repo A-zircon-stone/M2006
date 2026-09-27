@@ -4,39 +4,38 @@
 
 int main()
 {
-    FeederStallRecoveryController controller(1400,
-                                              5.0f,
+    FeederStallRecoveryController controller(7500.0f,
                                               100,
-                                              36.0f,
+                                              -45.0f,
                                               400);
 
-    // 满电流但电机仍在正常运动时，不应误判堵转。
+    // 反馈电流没有超过阈值时，无论速度如何都不能判定堵转。
     FeederStallRecoveryOutput output{};
     for (int i = 0; i < 120; ++i)
     {
-        output = controller.update(-1500, -20.0f, -100.0f);
+        output = controller.update(7500.0f, 100.0f);
         assert(!output.stalled);
     }
 
-    // 满电流且低速持续100个周期后，进入反拨并以实际位置+36°为目标。
+    // 反馈电流绝对值超过7500并持续100个周期后，反拨45°。
     for (int i = 0; i < 99; ++i)
     {
-        output = controller.update(-1500, 0.0f, -100.0f);
+        output = controller.update(-7600.0f, 100.0f);
         assert(!output.stalled);
     }
-    output = controller.update(-1500, 0.0f, -100.0f);
+    output = controller.update(-7600.0f, 100.0f);
     assert(output.stalled);
     assert(output.clear_integral);
-    assert(output.target_position == -64.0f);
+    assert(output.target_position == 55.0f);
 
     // 反拨期间保持同一目标，并要求每周期清除原发射方向的积分。
-    output = controller.update(1500, 10.0f, -80.0f);
+    output = controller.update(0.0f, 80.0f);
     assert(output.stalled);
     assert(output.clear_integral);
-    assert(output.target_position == -64.0f);
+    assert(output.target_position == 55.0f);
 
     // 到达反拨目标后退出解卡，本周期不应立即继续发射。
-    output = controller.update(1500, 0.0f, -64.0f);
+    output = controller.update(0.0f, 55.0f);
     assert(!output.stalled);
     assert(output.recovery_completed);
     assert(output.clear_integral);
@@ -45,35 +44,15 @@ int main()
     controller.reset();
     for (int i = 0; i < 100; ++i)
     {
-        output = controller.update(-1500, 0.0f, 50.0f);
+        output = controller.update(7600.0f, 50.0f);
     }
     assert(output.stalled);
     for (int i = 0; i < 399; ++i)
     {
-        output = controller.update(1500, 0.0f, 50.0f);
+        output = controller.update(0.0f, 50.0f);
         assert(output.stalled);
     }
-    output = controller.update(1500, 0.0f, 50.0f);
-    assert(!output.stalled);
-    assert(output.recovery_completed);
-
-    // 正常拨弹改为正方向后，反拨步长为-36°，到位判断也必须反向。
-    FeederStallRecoveryController reversed_controller(1400,
-                                                       5.0f,
-                                                       100,
-                                                       -36.0f,
-                                                       400);
-    for (int i = 0; i < 100; ++i)
-    {
-        output = reversed_controller.update(1500, 0.0f, 100.0f);
-    }
-    assert(output.stalled);
-    assert(output.target_position == 64.0f);
-
-    output = reversed_controller.update(-1500, -10.0f, 80.0f);
-    assert(output.stalled);
-
-    output = reversed_controller.update(-1500, 0.0f, 64.0f);
+    output = controller.update(0.0f, 50.0f);
     assert(!output.stalled);
     assert(output.recovery_completed);
 

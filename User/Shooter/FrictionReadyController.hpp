@@ -11,7 +11,8 @@ public:
 
     bool update(bool friction_enabled,
                 float left_speed,
-                float right_speed);
+                float right_speed,
+                bool speed_check_enabled = true);
     bool ready() const;
     void reset();
 

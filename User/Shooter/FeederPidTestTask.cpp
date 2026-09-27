@@ -1,6 +1,7 @@
 #include "FeederTelemetryFormatter.hpp"
 #include "FeederPidSafety.hpp"
 #include "FeederFireController.hpp"
+#include "FeederSmcController.hpp"
 #include "FeederStallRecoveryController.hpp"
 
 #include "DebugC.h"
@@ -12,25 +13,19 @@
 
 namespace
 {
-constexpr TickType_t kControlPeriod = 1 / portTICK_RATE_MS;
-constexpr uint32_t kPrintDivider = 20;
+constexpr TickType_t kControlPeriod = 2 / portTICK_RATE_MS;
+constexpr float kControlPeriodSeconds = 0.002f;
+constexpr uint32_t kPrintDivider = 10;
 constexpr TickType_t kFeedbackSettleTime = 200 / portTICK_RATE_MS;
-// 先沿用原车 EISMC 的结构参数，但把输出限制在较小范围内验证方向和制动。
-constexpr float kSmcJ = 0.3f;
-constexpr float kSmcK = 2000.0f;
-constexpr float kSmcC1 = 2.0f;
-constexpr float kSmcC2 = 10.0f;
-constexpr float kSmcEpsilon = 1.1f;
-constexpr float kSmcSaturationLimit = 0.5f;
-constexpr float kSmcMaxCurrent = 5000.0f;
-constexpr float kSmcPositionDeadband = 0.2f;
-constexpr float kPositionStep = 40.0f;
-constexpr float kPositionTolerance = 1.0f;
-constexpr uint32_t kShotIntervalCycles = 30;
-constexpr int16_t kStallCurrentThreshold = 1400;
-constexpr float kStallSpeedThreshold = 5.0f;
+constexpr float kSmcMaxCurrent = 9600.0f;
+constexpr float kSmcIntegralLimit = 2000.0f;
+constexpr float kPositionStep = 45.0f;
+constexpr float kPositionTolerance = 0.5f;
+constexpr uint32_t kMinimumMotionCycles = 70;
+constexpr uint32_t kPauseCycles = 10;
+constexpr float kStallCurrentThreshold = 7500.0f;
 constexpr uint32_t kStallDetectCycles = 100;
-constexpr float kRecoveryStep = -20.0f;
+constexpr float kRecoveryStep = -45.0f;
 constexpr uint32_t kRecoveryTimeoutCycles = 400;
 constexpr std::size_t kPrintBufferSize = 160;
 
@@ -45,46 +40,34 @@ extern "C" void FeederPidTestTask(void const *argument)
 
     // 当前验证 M2006 的 EISMC 位置控制；正式发射任务仍保持停用。
     shooter_feeder.canInit(0x204, &hcan1, cMotor::M_2006_p36);
-    shooter_feeder.MotorCtrl.c_SMC.Init();
-    shooter_feeder.MotorCtrl.c_SMC.SetParam(kSmcJ,
-                                            kSmcK,
-                                            kSmcC1,
-                                            kSmcC2,
-                                            kSmcEpsilon,
-                                            kSmcSaturationLimit,
-                                            kSmcMaxCurrent,
-                                            EISMC,
-                                            kSmcPositionDeadband);
-
     // 等待 CAN 反馈更新，再以当前输出轴位置作为初始目标。
     vTaskDelay(kFeedbackSettleTime);
-    float target_position = shooter_feeder.getEcd().total_angle;
-
-    // 先让 SMC 记住当前目标，避免首次更新把“0 到当前累计角度”误认为目标突变。
     const Motor_measure_f initial_feedback = shooter_feeder.getEcd();
-    shooter_feeder.MotorCtrl.c_SMC.ErrorUpdate(target_position,
-                                               initial_feedback.total_angle,
-                                               initial_feedback.speed);
-    shooter_feeder.MotorCtrl.c_SMC.ErrorUpdate(target_position,
-                                               initial_feedback.total_angle,
-                                               initial_feedback.speed);
-    shooter_feeder.MotorCtrl.c_SMC.Integval_Clear();
+    float target_position = initial_feedback.total_angle;
+    FeederSmcController feeder_smc(0.3f,
+                                   2000.0f,
+                                   2.0f,
+                                   10.0f,
+                                   1.1f,
+                                   0.5f,
+                                   kSmcMaxCurrent,
+                                   kSmcIntegralLimit);
+    feeder_smc.reset(target_position);
 
     FeederFireController fire_controller(kPositionStep,
                                          kPositionTolerance,
-                                         kShotIntervalCycles);
+                                         kMinimumMotionCycles,
+                                         kPauseCycles);
     const RC_ctrl_t initial_remote = RC_GetDatas();
     fire_controller.reset(target_position,
                           initial_remote.rc.ch[3] > 600);
     FeederStallRecoveryController stall_recovery(
             kStallCurrentThreshold,
-            kStallSpeedThreshold,
             kStallDetectCycles,
             kRecoveryStep,
             kRecoveryTimeoutCycles);
 
     uint32_t print_count = 0;
-    int16_t previous_command_current = 0;
     TickType_t current = xTaskGetTickCount();
 
     for (;;)
@@ -95,6 +78,7 @@ extern "C" void FeederPidTestTask(void const *argument)
         const bool stop_requested = remote.rc.s[1] == 1;
         bool force_zero_current = false;
         bool clear_integral = false;
+        bool reset_smc = false;
 
         if (stop_requested)
         {
@@ -107,15 +91,22 @@ extern "C" void FeederPidTestTask(void const *argument)
                                            feedback.total_angle,
                                            true);
             target_position = fire_output.target_position;
-            clear_integral = true;
+            reset_smc = true;
             force_zero_current = true;
         }
         else
         {
-            const FeederStallRecoveryOutput recovery_output =
-                    stall_recovery.update(previous_command_current,
-                                          feedback.speed,
-                                          feedback.total_angle);
+            FeederStallRecoveryOutput recovery_output{};
+            if (fire_controller.stepInProgress())
+            {
+                recovery_output = stall_recovery.update(
+                        feedback.torque_current,
+                        feedback.total_angle);
+            }
+            else
+            {
+                stall_recovery.reset();
+            }
 
             if (recovery_output.stalled)
             {
@@ -129,8 +120,7 @@ extern "C" void FeederPidTestTask(void const *argument)
                 target_position = feedback.total_angle;
                 fire_controller.reset(target_position,
                                       remote.rc.ch[3] > 600);
-                clear_integral = recovery_output.clear_integral;
-                force_zero_current = true;
+                reset_smc = recovery_output.clear_integral;
             }
             else
             {
@@ -141,27 +131,28 @@ extern "C" void FeederPidTestTask(void const *argument)
                                                feedback.total_angle,
                                                true);
                 target_position = fire_output.target_position;
+                clear_integral = fire_output.shot_completed;
             }
         }
 
-        if (clear_integral)
+        if (reset_smc)
         {
-            shooter_feeder.MotorCtrl.c_SMC.Integval_Clear();
+            feeder_smc.reset(target_position);
+        }
+        else if (clear_integral)
+        {
+            feeder_smc.clearIntegral();
         }
 
-        // SMC 同时使用位置误差和当前速度计算驱动/制动电流。
-        shooter_feeder.MotorCtrl.c_SMC.ErrorUpdate(target_position,
+        const float smc_output = feeder_smc.update(target_position,
                                                    feedback.total_angle,
-                                                   feedback.speed);
-        const float smc_output =
-                shooter_feeder.MotorCtrl.c_SMC.SmcCalculate();
-        const float sliding_surface =
-                shooter_feeder.MotorCtrl.c_SMC.getSmc().s;
+                                                   feedback.speed,
+                                                   kControlPeriodSeconds);
+        const float sliding_surface = feeder_smc.surface();
         const int16_t command_current = force_zero_current
                 ? 0
                 : FeederSmc_LimitBidirectionalCurrent(smc_output,
                                                       kSmcMaxCurrent);
-        previous_command_current = command_current;
         shooter_feeder.canSend(cMotor::eExternal, command_current);
         CanReg[1].sendBuff();
 

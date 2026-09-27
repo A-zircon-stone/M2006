@@ -1,16 +1,13 @@
 #include "FeederStallRecoveryController.hpp"
 
 #include <cmath>
-#include <cstdlib>
 
 FeederStallRecoveryController::FeederStallRecoveryController(
-        const int16_t stall_current_threshold,
-        const float stall_speed_threshold,
+        const float stall_current_threshold,
         const uint32_t stall_detect_cycles,
         const float recovery_step,
         const uint32_t recovery_timeout_cycles)
     : stall_current_threshold_(stall_current_threshold),
-      stall_speed_threshold_(stall_speed_threshold),
       stall_detect_cycles_(stall_detect_cycles),
       recovery_step_(recovery_step),
       recovery_timeout_cycles_(recovery_timeout_cycles),
@@ -22,8 +19,7 @@ FeederStallRecoveryController::FeederStallRecoveryController(
 }
 
 FeederStallRecoveryOutput FeederStallRecoveryController::update(
-        const int16_t command_current,
-        const float motor_speed,
+        const float feedback_current,
         const float current_position)
 {
     if (stalled_)
@@ -47,13 +43,7 @@ FeederStallRecoveryOutput FeederStallRecoveryController::update(
         return {true, false, true, recovery_target_};
     }
 
-    const bool current_is_saturated =
-            std::abs(static_cast<int>(command_current)) >=
-            stall_current_threshold_;
-    const bool speed_is_low =
-            std::fabs(motor_speed) <= stall_speed_threshold_;
-
-    if (current_is_saturated && speed_is_low)
+    if (std::fabs(feedback_current) > stall_current_threshold_)
     {
         ++stall_count_;
     }

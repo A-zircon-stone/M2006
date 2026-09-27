@@ -13,21 +13,18 @@ struct FeederStallRecoveryOutput
 class FeederStallRecoveryController
 {
 public:
-    FeederStallRecoveryController(int16_t stall_current_threshold,
-                                  float stall_speed_threshold,
+    FeederStallRecoveryController(float stall_current_threshold,
                                   uint32_t stall_detect_cycles,
                                   float recovery_step,
                                   uint32_t recovery_timeout_cycles);
 
-    FeederStallRecoveryOutput update(int16_t command_current,
-                                     float motor_speed,
+    FeederStallRecoveryOutput update(float feedback_current,
                                      float current_position);
 
     void reset();
 
 private:
-    int16_t stall_current_threshold_;
-    float stall_speed_threshold_;
+    float stall_current_threshold_;
     uint32_t stall_detect_cycles_;
     float recovery_step_;
     uint32_t recovery_timeout_cycles_;
