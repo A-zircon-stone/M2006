@@ -19,8 +19,8 @@ int main()
                                                        48.0f);
 
     const char expected[] =
-            "targetPos=441.78,pos=456.78,targetSpeed=-15.00,speed=-32.50,"
-            "pid=-650,cmd=-650,current=-620,temp=48\r\n";
+            "targetPos=441.78,pos=456.78,surface=-15.00,speed=-32.50,"
+            "smc=-650,cmd=-650,current=-620,temp=48\r\n";
 
     assert(length == std::strlen(expected));
     assert(std::strcmp(output, expected) == 0);

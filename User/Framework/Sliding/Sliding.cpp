@@ -77,7 +77,30 @@ void cSMC::ErrorUpdate(float target, float pos_now, float vol_now) //位置环�
     smc.error.v_error = vol_now - smc.error.tar_differential;
     smc.error.tar_last = smc.error.tar_now;
 
-    smc.error.p_error_integral += (float)(smc.error.p_error * SAMPLE_PERIOD); ///位置误差积分项
+    // 条件积分抗饱和：如果上一周期输出已经饱和，并且当前误差会把输出
+    // 继续推向同一饱和方向，则暂停积分；反向误差仍可使积分退出饱和。
+    const bool negative_output_saturated =
+            smc.u_max > 0.0f && smc.u <= -smc.u_max;
+    const bool positive_output_saturated =
+            smc.u_max > 0.0f && smc.u >= smc.u_max;
+    const bool drives_further_into_saturation =
+            (negative_output_saturated && smc.error.p_error > 0.0f) ||
+            (positive_output_saturated && smc.error.p_error < 0.0f);
+
+    if (!drives_further_into_saturation)
+    {
+        smc.error.p_error_integral +=
+                (float)(smc.error.p_error * SAMPLE_PERIOD); ///位置误差积分项
+    }
+
+    if (smc.error.p_error_integral > P_EORROR_INTEGRAL_MAX)
+    {
+        smc.error.p_error_integral = P_EORROR_INTEGRAL_MAX;
+    }
+    else if (smc.error.p_error_integral < -P_EORROR_INTEGRAL_MAX)
+    {
+        smc.error.p_error_integral = -P_EORROR_INTEGRAL_MAX;
+    }
 
     smc.error.tar_differential_last = smc.error.tar_differential; ///二阶导更新
 

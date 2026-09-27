@@ -17,3 +17,24 @@ int16_t FeederPid_LimitForwardCurrent(const float pid_output,
     const float limited = pid_output < minimum_current ? minimum_current : pid_output;
     return static_cast<int16_t>(limited);
 }
+
+int16_t FeederSmc_LimitBidirectionalCurrent(const float smc_output,
+                                            const float max_current)
+{
+    if (!std::isfinite(smc_output) || !std::isfinite(max_current) ||
+        max_current <= 0.0f)
+    {
+        return 0;
+    }
+
+    if (smc_output > max_current)
+    {
+        return static_cast<int16_t>(max_current);
+    }
+    if (smc_output < -max_current)
+    {
+        return static_cast<int16_t>(-max_current);
+    }
+
+    return static_cast<int16_t>(smc_output);
+}

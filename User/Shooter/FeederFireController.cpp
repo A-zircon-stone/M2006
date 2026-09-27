@@ -32,7 +32,8 @@ void FeederFireController::reset(const float current_position,
 FeederFireOutput FeederFireController::update(const uint8_t s1,
                                               const uint8_t s2,
                                               const int16_t left_stick_vertical,
-                                              const float current_position)
+                                              const float current_position,
+                                              const bool fire_permitted)
 {
     const bool trigger = left_stick_vertical > kTriggerThreshold;
     const bool stop = s1 == kSwitchUp;
@@ -46,8 +47,11 @@ FeederFireOutput FeederFireController::update(const uint8_t s1,
     bool target_changed = false;
     bool step_completed = false;
 
-    if (step_in_progress_ &&
-        current_position <= target_position_ + position_tolerance_)
+    const bool step_reached = position_step_ >= 0.0f
+            ? current_position >= target_position_ - position_tolerance_
+            : current_position <= target_position_ + position_tolerance_;
+
+    if (step_in_progress_ && step_reached)
     {
         step_in_progress_ = false;
         interval_count_ = interval_cycles_;
@@ -63,10 +67,12 @@ FeederFireOutput FeederFireController::update(const uint8_t s1,
     const bool fire_once = s2 == kSwitchUp && trigger && !last_trigger_;
     const bool fire_hold = s2 == kSwitchDown && trigger;
 
-    if (!step_in_progress_ && interval_count_ == 0 &&
+    if (fire_permitted && !step_in_progress_ && interval_count_ == 0 &&
         (fire_once || fire_hold))
     {
-        target_position_ += position_step_;
+        // 与原版发射逻辑一致：每一发都从此刻的实际位置生成目标。
+        // 即使上一发存在少量过冲，也不会让理论目标与机械位置越积越远。
+        target_position_ = current_position + position_step_;
         step_in_progress_ = true;
         target_changed = true;
     }

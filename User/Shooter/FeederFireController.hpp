@@ -22,7 +22,8 @@ public:
     FeederFireOutput update(uint8_t s1,
                             uint8_t s2,
                             int16_t left_stick_vertical,
-                            float current_position);
+                            float current_position,
+                            bool fire_permitted);
 
 private:
     float position_step_;

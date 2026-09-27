@@ -35,7 +35,7 @@ typedef struct {
 
     float p_error_integral;
     float v_error_integral;
-//    float v_error_integral_max;
+    //float v_error_integral_max;
 
     float pos_error_eps;   //误差精度
     float vol_error_eps;   //误差精度

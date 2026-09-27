@@ -21,7 +21,7 @@ void initFeederMotor(cMotor &motor)
                                    0.0f, 0.0f, 0.0f, 500.0f);
     motor.MotorCtrl.c_SMC.Init();
     motor.MotorCtrl.c_SMC.SetParam(0.3f, 2000.0f, 2.0f, 10.0f,
-                                   1.1f, 0.5f, 9600.0f, EISMC, 0.0f);
+                                   1.1f, 0.5f, 5000.0f, EISMC, 0.2f);
 }
 
 void stopMotor(cMotor &motor)

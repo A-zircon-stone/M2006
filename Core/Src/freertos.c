@@ -109,17 +109,18 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE END RTOS_SEMAPHORES */
 
   /* Create the thread(s) */
-  /* M2006 调试期间暂停创建正式发射任务，避免滑模控制与测试任务同时写入 0x204。 */
-  /* osThreadDef(Shooter_Task, ShooterTask, osPriorityNormal, 0, 1024); */
-  /* Shooter_TaskHandle = osThreadCreate(osThread(Shooter_Task), NULL); */
+  /* 正式完整发射链：摩擦轮、转速许可、拨弹和堵转反拨由同一任务控制。 */
+  osThreadDef(Shooter_Task, ShooterTask, osPriorityNormal, 0, 1024);
+  Shooter_TaskHandle = osThreadCreate(osThread(Shooter_Task), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* 暂停遥控打印，避免它和调试任务同时使用 USART1 TX DMA。 */
   /* osThreadDef(RCPrintTest_Task, RCPrintTestTask, osPriorityLow, 0, 1024); */
   /* RCPrintTest_TaskHandle = osThreadCreate(osThread(RCPrintTest_Task), NULL); */
 
-  osThreadDef(FeederPidTest_Task, FeederPidTestTask, osPriorityNormal, 0, 1024);
-  FeederPidTest_TaskHandle = osThreadCreate(osThread(FeederPidTest_Task), NULL);
+  /* 完整链运行时停用单电机测试任务，避免重复写CAN 0x200控制帧。 */
+  /* osThreadDef(FeederPidTest_Task, FeederPidTestTask, osPriorityNormal, 0, 1024); */
+  /* FeederPidTest_TaskHandle = osThreadCreate(osThread(FeederPidTest_Task), NULL); */
   /* USER CODE END RTOS_THREADS */
 
 }

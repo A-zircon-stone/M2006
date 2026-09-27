@@ -34,6 +34,26 @@ add_executable(feeder_fire_controller_test
     ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter/FeederFireController.cpp
 )
 
+add_executable(sliding_integral_limit_test
+    SlidingIntegralLimitTest.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/../User/Framework/Sliding/Sliding.cpp
+)
+
+add_executable(feeder_stall_recovery_controller_test
+    FeederStallRecoveryControllerTest.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter/FeederStallRecoveryController.cpp
+)
+
+add_executable(friction_ready_controller_test
+    FrictionReadyControllerTest.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter/FrictionReadyController.cpp
+)
+
+add_executable(shooter_telemetry_formatter_test
+    ShooterTelemetryFormatterTest.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter/ShooterTelemetryFormatter.cpp
+)
+
 target_include_directories(shooter_controller_test PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter
 )
@@ -55,5 +75,23 @@ target_include_directories(feeder_pid_safety_test PRIVATE
 )
 
 target_include_directories(feeder_fire_controller_test PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter
+)
+
+target_include_directories(sliding_integral_limit_test PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/stubs
+    ${CMAKE_CURRENT_LIST_DIR}/../User/Framework/Sliding
+    ${CMAKE_CURRENT_LIST_DIR}/../User/Framework/Debug
+)
+
+target_include_directories(feeder_stall_recovery_controller_test PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter
+)
+
+target_include_directories(friction_ready_controller_test PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter
+)
+
+target_include_directories(shooter_telemetry_formatter_test PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter
 )
