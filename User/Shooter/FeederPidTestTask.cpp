@@ -1,6 +1,7 @@
 #include "FeederTelemetryFormatter.hpp"
 #include "FeederPidSafety.hpp"
 #include "FeederFireController.hpp"
+#include "FeederModeController.hpp"
 
 #include "DebugC.h"
 #include "MotorC.hpp"
@@ -24,9 +25,12 @@ constexpr float kPositionKp = 4.0f;
 constexpr float kPositionKi = 0.0f;
 constexpr float kPositionKd = 0.0f;
 constexpr float kMaxTargetSpeed = 20.0f;
-constexpr float kPositionStep = -30.0f;
+constexpr float kPositionStep = -36.0f;
 constexpr float kPositionTolerance = 1.0f;
 constexpr uint32_t kShotIntervalCycles = 30;
+// getEcd().speed 已除以36，因此这里是拨弹盘输出轴转速。
+// 负号与当前单发位置步长方向一致。
+constexpr float kContinuousTargetSpeed = -120.0f;
 constexpr std::size_t kPrintBufferSize = 160;
 
 char print_buffer[kPrintBufferSize]{};
@@ -57,6 +61,7 @@ extern "C" void FeederPidTestTask(void const *argument)
     FeederFireController fire_controller(kPositionStep,
                                          kPositionTolerance,
                                          kShotIntervalCycles);
+    FeederModeController mode_controller(kContinuousTargetSpeed);
     const RC_ctrl_t initial_remote = RC_GetDatas();
     fire_controller.reset(target_position,
                           initial_remote.rc.ch[3] > 600);
@@ -69,26 +74,80 @@ extern "C" void FeederPidTestTask(void const *argument)
         const Motor_measure_f feedback = shooter_feeder.getEcd();
         const RC_ctrl_t remote = RC_GetDatas();
 
-        const FeederFireOutput fire_output =
-                fire_controller.update(remote.rc.s[1],
+        const FeederModeOutput mode_output =
+                mode_controller.update(remote.rc.s[1],
                                        remote.rc.s[0],
-                                       remote.rc.ch[3],
-                                       feedback.total_angle);
-        target_position = fire_output.target_position;
-        if (fire_output.target_changed)
+                                       remote.rc.ch[3]);
+
+        float target_speed = 0.0f;
+        float pid_output = 0.0f;
+        int16_t command_current = 0;
+
+        if (mode_output.mode == FeederControlMode::Stop)
         {
+            // Stop时取消未完成单发并把位置目标同步到当前位置。
+            const FeederFireOutput fire_output =
+                    fire_controller.update(remote.rc.s[1],
+                                           remote.rc.s[0],
+                                           remote.rc.ch[3],
+                                           feedback.total_angle);
+            target_position = fire_output.target_position;
+            shooter_feeder.MotorCtrl.c_PID.SpdPIDClear();
+            shooter_feeder.MotorCtrl.c_PID.PosPIDClear();
             shooter_feeder.MotorCtrl.c_PID.setPosTar(target_position);
         }
+        else if (mode_output.mode == FeederControlMode::ContinuousSpeed)
+        {
+            if (mode_output.entered_continuous)
+            {
+                // 进入连发时放弃旧位置目标，并清除位置环和速度环历史量。
+                target_position = feedback.total_angle;
+                fire_controller.reset(target_position, true);
+                shooter_feeder.MotorCtrl.c_PID.PosPIDClear();
+                shooter_feeder.MotorCtrl.c_PID.SpdPIDClear();
+                shooter_feeder.MotorCtrl.c_PID.setPosTar(target_position);
+            }
 
-        // 位置环输出目标速度，速度环再根据实际速度输出电流。
-        shooter_feeder.MotorCtrl.c_PID.posLoop(feedback.total_angle,
-                                               feedback.speed);
-        const float target_speed =
-                shooter_feeder.MotorCtrl.c_PID.getSpdTar();
-        const float pid_output = shooter_feeder.MotorCtrl.c_PID.pidOut();
-        const int16_t command_current = fire_output.stop
-                ? 0
-                : FeederPid_LimitForwardCurrent(pid_output, kMaxCurrent);
+            shooter_feeder.MotorCtrl.c_PID.setSpdTar(
+                    mode_output.continuous_speed_target);
+            shooter_feeder.MotorCtrl.c_PID.spdLoop(feedback.speed);
+            target_speed = shooter_feeder.MotorCtrl.c_PID.getSpdTar();
+            pid_output = shooter_feeder.MotorCtrl.c_PID.pidOut();
+            command_current = FeederPid_LimitForwardCurrent(pid_output,
+                                                            kMaxCurrent);
+        }
+        else if (mode_output.left_continuous)
+        {
+            // 退出连发的第一个周期先输出0，并同步位置，避免位置环追旧目标。
+            target_position = feedback.total_angle;
+            fire_controller.reset(target_position,
+                                  remote.rc.ch[3] > 600);
+            shooter_feeder.MotorCtrl.c_PID.SpdPIDClear();
+            shooter_feeder.MotorCtrl.c_PID.PosPIDClear();
+            shooter_feeder.MotorCtrl.c_PID.setPosTar(target_position);
+        }
+        else
+        {
+            const FeederFireOutput fire_output =
+                    fire_controller.update(remote.rc.s[1],
+                                           remote.rc.s[0],
+                                           remote.rc.ch[3],
+                                           feedback.total_angle);
+            target_position = fire_output.target_position;
+            if (fire_output.target_changed)
+            {
+                shooter_feeder.MotorCtrl.c_PID.setPosTar(target_position);
+            }
+
+            // 单发仍使用原来的位置外环+速度内环。
+            shooter_feeder.MotorCtrl.c_PID.posLoop(feedback.total_angle,
+                                                   feedback.speed);
+            target_speed = shooter_feeder.MotorCtrl.c_PID.getSpdTar();
+            pid_output = shooter_feeder.MotorCtrl.c_PID.pidOut();
+            command_current = FeederPid_LimitForwardCurrent(pid_output,
+                                                            kMaxCurrent);
+        }
+
         shooter_feeder.canSend(cMotor::eExternal, command_current);
         CanReg[1].sendBuff();
 

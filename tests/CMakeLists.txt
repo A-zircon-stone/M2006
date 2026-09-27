@@ -34,6 +34,11 @@ add_executable(feeder_fire_controller_test
     ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter/FeederFireController.cpp
 )
 
+add_executable(feeder_mode_controller_test
+    FeederModeControllerTest.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter/FeederModeController.cpp
+)
+
 target_include_directories(shooter_controller_test PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter
 )
@@ -55,5 +60,9 @@ target_include_directories(feeder_pid_safety_test PRIVATE
 )
 
 target_include_directories(feeder_fire_controller_test PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter
+)
+
+target_include_directories(feeder_mode_controller_test PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/../User/Shooter
 )
